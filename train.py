@@ -15,8 +15,9 @@ class FootDataset(torch.utils.data.Dataset):
 		return len(self.DataList)
 	def __getitem__(self, index):
 		data = self.DataList[index]
+		# image = torch.stack([self.transform(Image.open(data[0])) for _ in range(5)])
 		image = self.transform(Image.open(data[0]))
-		label = (torch.Tensor([float(value) for value in data[1:]]) - self.label_mean) / self.label_std
+		label = (torch.Tensor([float(value) for value in data[1:]]) - self.label_mean)
 
 		return image, label
 
@@ -35,7 +36,9 @@ def forward(DataLoader, model, Lossfunction, optimizer = None, scaler = None) :
         inputs = inputs.half().cuda()
         labels = labels.reshape(-1, 2).half().cuda()
         with torch.cuda.amp.autocast():
+            # outputs = model(inputs.reshape(-1, 3, 400, 120)).reshape(-1, 5, 4).mean(1).reshape(-1, 2)
             outputs = model(inputs).reshape(-1, 2)
+            del inputs
             # loss = LossFunction(outputs, labels)
             loss = torch.sqrt(((outputs - labels) ** 2).sum(1)).mean()
         TotalLoss += loss.item()
@@ -69,8 +72,8 @@ if __name__ == '__main__':
 
 	transform_train = torchvision.transforms.Compose([
 		torchvision.transforms.Resize((args.sz * 400, args.sz * 120)),
-		# torchvision.transforms.GaussianBlur(99, (0.1, 2)),
-		# transforms.ColorJitter(brightness = (0.5, 1.5), saturation = (0.1, 2), contrast = (0.5, 2.5)), #b = (0.75, 1.25), c = (0.5, 2), s = (1, 1.5), h = 0.05
+		torchvision.transforms.GaussianBlur(99, (0.1, 2)),
+		torchvision.transforms.ColorJitter(brightness = (0.5, 1.5), saturation = (0.1, 2), contrast = (0.5, 2.5)),
 	    torchvision.transforms.ToTensor(),
 	    torchvision.transforms.Normalize((0.7476, 0.8128, 0.7944), (0.3344, 0.2694, 0.3193)),
 	])
