@@ -5,17 +5,21 @@ from PIL import Image
 from model import EfficientNetWithFC, ResNet
 
 class FootDataset(torch.utils.data.Dataset):
-	def __init__(self, DataList, transform):
+	def __init__(self, DataList, transform, direction):
 		super(FootDataset, self).__init__()
 		self.DataList = DataList
 		self.transform = transform
-		self.label_mean = torch.Tensor([57.9607, 134.3954, 55.0105, 378.1777])
+		self.label_mean = [57.9607, 134.3954, 55.0105, 378.1777][direction]
+		self.direction = direction
 	def __len__(self):
 		return len(self.DataList)
 	def __getitem__(self, index):
 		data = self.DataList[index]
-		image = self.transform(Image.open(data[0]))
-		label = (torch.Tensor([float(value) for value in data[1:]]) - self.label_mean)
+		if self.direction <= 1:
+			image = self.transform(Image.open(data[0]).crop((0, 50, 120, 200)))
+		else:
+			image = self.transform(Image.open(data[0]).crop((0, 300, 120, 400)))
+		label = float(data[self.direction + 1]) - self.label_mean
 
 		return image, label
 
@@ -32,8 +36,8 @@ def forward(DataLoader, model, optimizer = None) :
 
         # forward
         inputs = inputs.cuda()
-        labels = labels.reshape(-1, 2).cuda()
-        outputs = model(inputs).reshape(-1, 2)
+        labels = labels.cuda()
+        outputs = model(inputs)
         del inputs
         loss = torch.sqrt(((outputs - labels) ** 2).sum(1)).mean()
         TotalLoss += loss.item()
@@ -42,7 +46,6 @@ def forward(DataLoader, model, optimizer = None) :
         if optimizer :
             loss.backward()
             optimizer.step()
-            scaler.update()
         del loss, labels, outputs
 
     TotalLoss /= DataLoader.__len__()
@@ -57,6 +60,7 @@ if __name__ == '__main__':
 	parser.add_argument("--ep", type = int, default = 100)
 	parser.add_argument("--lr", type = float, default = 0.001)
 	parser.add_argument("--bs", type = int, default = 16)
+	parser.add_argument("--dir", type = int, default = 0)
 	parser.add_argument("--sz", type = float, default = 1)
 	parser.add_argument("--sv", type = str, default = 'tmp.weight')
 	parser.add_argument("--ld", type = str, default = None)
@@ -65,8 +69,15 @@ if __name__ == '__main__':
 	with open('data.csv', 'r') as file:
 		data = list(csv.reader(file, delimiter = ','))
 
+
+	if self.direction <= 1:
+		height = int(150 * args.sz)
+	else:
+		height = int(100 * args.sz)
+	width = int(120 * args.sz)
+
 	transform_train = torchvision.transforms.Compose([
-		torchvision.transforms.Resize((int(args.sz * 400), int(args.sz * 120))),
+		torchvision.transforms.Resize((height, width)),
 		torchvision.transforms.GaussianBlur(99, (0.1, 2)),
 		torchvision.transforms.ColorJitter(brightness = (0.5, 1.5), saturation = (0.1, 2), contrast = (0.5, 2.5)),
 	    torchvision.transforms.ToTensor(),
@@ -74,7 +85,7 @@ if __name__ == '__main__':
 	])
 
 	transform_test = torchvision.transforms.Compose([
-		torchvision.transforms.Resize((int(args.sz * 400), int(args.sz * 120))),
+		torchvision.transforms.Resize((height, width)),
 	    torchvision.transforms.ToTensor(),
 	    torchvision.transforms.Normalize((0.7476, 0.8128, 0.7944), (0.3344, 0.2694, 0.3193)),
 	])
@@ -88,7 +99,7 @@ if __name__ == '__main__':
 	if args.ld:
 		model = torch.load(args.ld)
 	else:
-		model = ResNet(4).cuda()
+		model = ResNet(1).cuda()
 	torch.backends.cudnn.benchmark = True
 	optimizer = torch.optim.Adam(model.parameters(), lr = args.lr)
 
