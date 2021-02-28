@@ -45,7 +45,8 @@ if __name__ == '__main__' :
             image[:y_offset] = 255
         else:
             image[400 + y_offset :] = 255
-        
+        if torch.rand(size = (1, )) >= 0.5:
+                image[200:300] = 255
         return transform_train(Image.fromarray(image))
 
     top_model = torch.load(args.top)

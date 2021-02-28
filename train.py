@@ -46,6 +46,8 @@ class FootDataset(torch.utils.data.Dataset):
 				image[:y_offset] = 255
 			else:
 				image[400 + y_offset :] = 255
+			if torch.rand(size = (1, )) >= 0.5:
+				image[200:300] = 255
 			image = Image.fromarray(image)
 			label[0] += x_offset
 			label[1] += y_offset
@@ -62,7 +64,7 @@ def forward(DataLoader, model, optimizer = None) :
             optimizer.zero_grad()
 
         # forward
-        inputs = inputs.cuda()
+        inputs = inputs.half().cuda()
         labels = labels.cuda()
         outputs = model(inputs)
         del inputs
@@ -117,9 +119,9 @@ if __name__ == '__main__':
 	if args.ld:
 		model = torch.load(args.ld)
 	else:
-		model = EfficientNetWithFC(2).cuda()
+		model = EfficientNetWithFC(2).half().cuda()
 	torch.backends.cudnn.benchmark = True
-	optimizer = torch.optim.Adam(model.parameters(), lr = args.lr)
+	optimizer = torch.optim.Adam(model.parameters(), lr = args.lr, eps = 1e-3)
 
 	model.eval()
 	with torch.no_grad() :
