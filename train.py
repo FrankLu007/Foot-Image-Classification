@@ -1,39 +1,65 @@
-import argparse
+import argparse, numpy
 import torch, csv
-import torchvision
-from PIL import Image
-from model import EfficientNetWithFC, ResNet
+from torchvision import transforms
+from PIL import Image, ImageChops, ImageFilter
+from model import EfficientNetWithFC
 
 class FootDataset(torch.utils.data.Dataset):
-	def __init__(self, DataList, transform):
+	def __init__(self, DataList, transform, direction, mode = None):
 		super(FootDataset, self).__init__()
 		self.DataList = DataList
 		self.transform = transform
-		self.label_mean = torch.Tensor([57.9607, 134.3954, 55.0105, 378.1777])
+		self.direction = direction
+		self.mode = mode
+		if direction == 0:
+			self.label_mean = torch.Tensor([57.9607, 134.3954, 55.0105, 378.1777])[:2]
+		else:
+			self.label_mean = torch.Tensor([57.9607, 134.3954, 55.0105, 378.1777])[2:]
 	def __len__(self):
 		return len(self.DataList)
 	def __getitem__(self, index):
 		data = self.DataList[index]
-		image = self.transform(Image.open(data[0]))
-		label = (torch.Tensor([float(value) for value in data[1:]]) - self.label_mean)
+		image = Image.open(data[0].replace('\\', '/'))
+		label = [int(value) for value in data[self.direction * 2 + 1 : self.direction * 2 + 3]]
+		if  self.mode:
+			if torch.rand(size = (1, )) >= 0.5:
+				image = image.transpose(Image.FLIP_LEFT_RIGHT)
+				label[0] = 120 - label[0]
+			angle = (torch.rand(size = (1,)).item() - 0.5) * 5
+			image = image.rotate(angle, center = (label[0], label[1]), fillcolor = (255, 255, 255))
+			y_limit = min(400 - int(data[4]), int(data[2]) - 50)
+			# x_limit, y_limit = min(120 - label[0], label[0]), min(label[1] - self.y_min, self.y_max - label[1])
+			x_offset = torch.randint(low = - 10,  high = 10, size = (1,))
+			y_offset = torch.randint(low = - y_limit, high = y_limit, size = (1,))
+			image = numpy.array(ImageChops.offset(image, x_offset, y_offset))
+			if x_offset > 0:
+				image[:, :x_offset] = 255
+			else:
+				image[:, 120 + x_offset :] = 255
+			if y_offset > 0:
+				image[:y_offset] = 255
+			else:
+				image[400 + y_offset :] = 255
 
-		return image, label
+			image = Image.fromarray(image)
+			label[0] += x_offset
+			label[1] += y_offset
+		return self.transform(image), torch.Tensor(label) - self.label_mean
 
 def forward(DataLoader, model, optimizer = None) :
 
     TotalLoss = 0
 
     for inputs, labels in DataLoader:
-
         # initialize
         torch.cuda.empty_cache()
         if optimizer :
             optimizer.zero_grad()
 
         # forward
-        inputs = inputs.cuda()
-        labels = labels.reshape(-1, 2).cuda()
-        outputs = model(inputs).reshape(-1, 2)
+        inputs = inputs.half().cuda()
+        labels = labels.cuda()
+        outputs = model(inputs)
         del inputs
         loss = torch.sqrt(((outputs - labels) ** 2).sum(1)).mean()
         TotalLoss += loss.item()
@@ -42,7 +68,6 @@ def forward(DataLoader, model, optimizer = None) :
         if optimizer :
             loss.backward()
             optimizer.step()
-            scaler.update()
         del loss, labels, outputs
 
     TotalLoss /= DataLoader.__len__()
@@ -57,7 +82,7 @@ if __name__ == '__main__':
 	parser.add_argument("--ep", type = int, default = 100)
 	parser.add_argument("--lr", type = float, default = 0.001)
 	parser.add_argument("--bs", type = int, default = 16)
-	parser.add_argument("--sz", type = float, default = 1)
+	parser.add_argument("--dir", type = int, default = 0)
 	parser.add_argument("--sv", type = str, default = 'tmp.weight')
 	parser.add_argument("--ld", type = str, default = None)
 	args = parser.parse_args()
@@ -65,32 +90,30 @@ if __name__ == '__main__':
 	with open('data.csv', 'r') as file:
 		data = list(csv.reader(file, delimiter = ','))
 
-	transform_train = torchvision.transforms.Compose([
-		torchvision.transforms.Resize((int(args.sz * 400), int(args.sz * 120))),
-		torchvision.transforms.GaussianBlur(99, (0.1, 2)),
-		torchvision.transforms.ColorJitter(brightness = (0.5, 1.5), saturation = (0.1, 2), contrast = (0.5, 2.5)),
-	    torchvision.transforms.ToTensor(),
-	    torchvision.transforms.Normalize((0.7476, 0.8128, 0.7944), (0.3344, 0.2694, 0.3193)),
+	transform_train = transforms.Compose([
+		transforms.GaussianBlur(7, (0.1, 2)),
+		transforms.ColorJitter(brightness = (0.5, 1.5), saturation = (0.1, 2), contrast = (0.5, 2.5)),
+	    transforms.ToTensor(),
+	    transforms.Normalize((0.7476, 0.8128, 0.7944), (0.3344, 0.2694, 0.3193), inplace = True),
 	])
 
-	transform_test = torchvision.transforms.Compose([
-		torchvision.transforms.Resize((int(args.sz * 400), int(args.sz * 120))),
-	    torchvision.transforms.ToTensor(),
-	    torchvision.transforms.Normalize((0.7476, 0.8128, 0.7944), (0.3344, 0.2694, 0.3193)),
+	transform_test = transforms.Compose([
+	    transforms.ToTensor(),
+	    transforms.Normalize((0.7476, 0.8128, 0.7944), (0.3344, 0.2694, 0.3193), inplace = True),
 	])
 
-	TrainingSet = FootDataset(data[:-150], transform_train)
-	ValidationSet = FootDataset(data[-150:], transform_test)
+	TrainingSet = FootDataset(data[:-160], transform_train, args.dir, mode = 'train')
+	ValidationSet = FootDataset(data[-160:], transform_test, args.dir)
 
 	TrainingLoader = torch.utils.data.DataLoader(TrainingSet, batch_size = args.bs, pin_memory = True, drop_last = True, shuffle = True, num_workers = 0)
-	ValidationLoader = torch.utils.data.DataLoader(ValidationSet, batch_size = args.bs, num_workers = 0)
+	ValidationLoader = torch.utils.data.DataLoader(ValidationSet, batch_size = 160, num_workers = 0)
 
 	if args.ld:
 		model = torch.load(args.ld)
 	else:
-		model = ResNet(4).cuda()
+		model = EfficientNetWithFC(2).half().cuda()
 	torch.backends.cudnn.benchmark = True
-	optimizer = torch.optim.Adam(model.parameters(), lr = args.lr)
+	optimizer = torch.optim.Adam(model.parameters(), lr = args.lr, eps = 1e-3)
 
 	model.eval()
 	with torch.no_grad() :
