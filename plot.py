@@ -1,10 +1,26 @@
+<<<<<<< HEAD
 import csv, cv2
 import torch, numpy
 from PIL import Image
+=======
+# +
+import csv, cv2
+import torch
+from PIL import Image, ImageOps
+>>>>>>> 693a863c2f84a03dc6f3a4991b8f8aac369d55ba
 import torchvision
 from PIL import Image, ImageChops, ImageFilter, ImageEnhance
 from torchvision import	 transforms
+<<<<<<< HEAD
 from skimage import feature
+=======
+# %matplotlib inline
+
+import matplotlib
+import numpy
+import matplotlib.pyplot as plt
+# -
+>>>>>>> 693a863c2f84a03dc6f3a4991b8f8aac369d55ba
 
 transform_train = transforms.Compose([
 	# transforms.Resize((512, 512)),
@@ -17,7 +33,9 @@ recover = transforms.ToPILImage()
 
 
 
+# +
 if __name__ == '__main__' :
+<<<<<<< HEAD
 	with open('data.csv', 'r') as file:
 		data = list(csv.reader(file, delimiter = ','))
 
@@ -35,3 +53,34 @@ if __name__ == '__main__' :
 	# tensor(0.8204) tensor(0.2309)
 	# img = feature.canny(image.astype(float)[:, :, 0] / 255, sigma = 1)
 	# blur_img = feature.canny(cv2.medianBlur(image[:, :, 0], 13).astype(float) / 255, sigma = 1)
+=======
+    with open('data.csv', 'r') as file:
+        data = list(csv.reader(file, delimiter = ','))
+    from random import shuffle
+    shuffle(data)
+    print(data[0])
+    image = numpy.array(Image.open(data[0][0].replace('\\', '/')))
+    
+#     image = numpy.array(ImageOps.grayscale(Image.open(data[0][0].replace('\\', '/'))))
+    a, b, c, d = int(data[0][1]), int(data[0][2]), int(data[0][3]), int(data[0][4])
+#     image[b - 10 : b + 10, a - 10 : a + 10] = 0
+    plt.imshow(image)
+    plt.show()
+    
+    from skimage import feature
+    for i in range(3):
+        edges1 = feature.canny(image.astype(float)[:, :, i] / 255)
+        edges2 = feature.canny(image.astype(float)[:, :, i] / 255, sigma = 5.5)
+
+        plt.imshow(edges2)
+        plt.show()
+        edges2[b - 10 : b + 10, a - 10 : a + 10] = 1
+        edges2[d - 10 : d + 10, c - 10 : c + 10] = 1
+        plt.imshow(edges2)
+        plt.show()
+# -
+
+
+
+
+>>>>>>> 693a863c2f84a03dc6f3a4991b8f8aac369d55ba
